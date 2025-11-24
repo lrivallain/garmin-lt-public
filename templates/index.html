@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_title }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: white;
+            font-size: 2em;
+            font-weight: 600;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .status.active {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border: 2px solid #10b981;
+        }
+
+        .status.last_activity {
+            background: rgba(30, 64, 175, 0.25);
+            color: #fefefe;
+            border: 2px solid #1e40af;
+        }
+
+        .status.waiting {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+            border: 2px solid #f59e0b;
+        }
+
+        .livetrack-link {
+            display: none;
+            margin-top: 12px;
+        }
+
+        .livetrack-link a {
+            color: white;
+            text-decoration: none;
+            padding: 8px 20px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .livetrack-link a:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
+        }
+
+        .livetrack-link svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 95%;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #livetrack-iframe {
+            width: 100%;
+            flex: 1;
+            border: none;
+            min-height: 80vh;
+        }
+
+        .waiting-message {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            text-align: center;
+            min-height: 80vh;
+        }
+
+        .waiting-message svg {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 30px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.5;
+                transform: scale(0.95);
+            }
+        }
+
+        .waiting-message h2 {
+            color: #374151;
+            font-size: 1.8em;
+            margin-bottom: 15px;
+        }
+
+        .waiting-message p {
+            color: #6b7280;
+            font-size: 1.1em;
+            max-width: 500px;
+        }
+
+        footer {
+            padding: 15px;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.9em;
+        }
+
+        footer a {
+            color: rgba(255, 255, 255, 0.9);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .spinner {
+            border: 3px solid rgba(103, 126, 234, 0.2);
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🏃 {{ app_title }}</h1>
+        <div id="status" class="status waiting">
+            <span id="status-text">En attente d'activité...</span>
+        </div>
+    </header>
+
+    <main>
+        <div class="container" id="content-container">
+            <div class="waiting-message" id="waiting-message">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+                <h2>Aucune activité en cours</h2>
+                <p>En attente d'une nouvelle activité Garmin LiveTrack. La page se mettra à jour automatiquement dès qu'une activité sera détectée.</p>
+                <div class="spinner"></div>
+            </div>
+            <iframe id="livetrack-iframe" style="display: none;"></iframe>
+        </div>
+
+
+        </div>
+    </main>
+
+    <footer>
+        <div class="livetrack-link" id="livetrack-link">
+            <a href="#" target="_blank" rel="noopener noreferrer" id="livetrack-url">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Ouvrir dans Garmin LiveTrack
+            </a>
+        </div>
+    </footer>
+
+    <script>
+        const statusElement = document.getElementById('status');
+        const statusText = document.getElementById('status-text');
+        const waitingMessage = document.getElementById('waiting-message');
+        const iframe = document.getElementById('livetrack-iframe');
+        const livetrackLink = document.getElementById('livetrack-link');
+        const livetrackUrl = document.getElementById('livetrack-url');
+
+        function updateUI(data) {
+            // Handle both string (old SSE format) and object (new API format)
+            let status = 'waiting';
+            let url = null;
+
+            if (typeof data === 'string') {
+                // Old format from SSE - just a URL
+                url = data;
+                status = url ? 'active' : 'waiting';
+            } else if (data && typeof data === 'object') {
+                // New format from API - full status object
+                status = data.status || 'waiting';
+                url = data.url;
+            }
+
+            if (url && status !== 'waiting') {
+                // Activity exists (either active or last_activity)
+                if (status === 'active') {
+                    statusElement.className = 'status active';
+                    statusText.textContent = 'Activité en cours';
+                } else if (status === 'last_activity') {
+                    statusElement.className = 'status last_activity';
+                    statusText.textContent = 'Dernière activité';
+                }
+
+                // Show and update the LiveTrack link
+                livetrackLink.style.display = 'block';
+                livetrackUrl.href = url;
+
+                waitingMessage.style.display = 'none';
+                iframe.style.display = 'block';
+                if (iframe.src !== url) {
+                    iframe.src = url;
+                }
+                console.log('LiveTrack status:', status, 'URL:', url);
+            } else {
+                // No activity
+                statusElement.className = 'status waiting';
+                statusText.textContent = 'En attente d\'activité...';
+                livetrackLink.style.display = 'none';
+                waitingMessage.style.display = 'flex';
+                iframe.style.display = 'none';
+                iframe.src = '';
+                console.log('No active LiveTrack');
+            }
+        }
+
+        // Establish Server-Sent Events connection
+        const eventSource = new EventSource('/api/stream');
+
+        eventSource.onmessage = function(event) {
+            const url = event.data.trim();
+            updateUI(url || null);
+        };
+
+        eventSource.onerror = function(error) {
+            console.error('EventSource error:', error);
+            // Attempt to reconnect automatically (EventSource does this by default)
+        };
+
+        // Initial load - fetch current status
+        fetch('/api/current')
+            .then(response => response.json())
+            .then(data => {
+                updateUI(data);
+            })
+            .catch(error => {
+                console.error('Error fetching initial status:', error);
+            });
+
+        // Periodically refresh status to update stale activities
+        setInterval(function() {
+            fetch('/api/current')
+                .then(response => response.json())
+                .then(data => {
+                    updateUI(data);
+                })
+                .catch(error => {
+                    console.error('Error refreshing status:', error);
+                });
+        }, 60000); // Check every minute for status changes
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            eventSource.close();
+        });
+    </script>
+</body>
+</html>
