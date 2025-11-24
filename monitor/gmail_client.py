@@ -139,7 +139,7 @@ class GmailClient:
         # Extract subject and date
         subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
         date_str = next((h['value'] for h in headers if h['name'] == 'Date'), '')
-        
+
         # Parse email timestamp
         timestamp = None
         if date_str:
@@ -147,7 +147,7 @@ class GmailClient:
                 timestamp = parsedate_to_datetime(date_str)
             except Exception as e:
                 print(f"Warning: Could not parse email date '{date_str}': {e}")
-        
+
         # Use internal date as fallback
         if not timestamp and 'internalDate' in message:
             try:

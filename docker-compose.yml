@@ -1,51 +1,80 @@
 services:
-  garmin-livetrack:
-    build: .
-    container_name: garmin-livetrack-public
-    ports:
-      - "5002:5000"
+  # Email monitoring service (background process)
+  monitor:
+    build:
+      context: ./monitor
+      dockerfile: Dockerfile
+    container_name: garmin-livetrack-monitor
     volumes:
       # Mount credentials (read-only for security)
       - ./credentials.json:/app/config/credentials.json:ro
       # Mount token (read-write, app needs to update it)
       - ./token.json:/app/config/token.json:rw
+      # Shared state file
+      - livetrack-state:/app/state
     environment:
-      # Application settings
-      - APP_TITLE=Garmin LiveTrack Public
-      - GMAIL_ACCOUNT=your-email@gmail.com
-      - PORT=5000
-
-      # Email monitoring settings
+      - GMAIL_ACCOUNT=your-livetrack@gmail.com
       - EMAIL_CHECK_INTERVAL=30
-      - ACTIVITY_MAX_AGE_HOURS=24
-
-      # Credentials paths (already set in Dockerfile)
       - GMAIL_CREDENTIALS_FILE=/app/config/credentials.json
       - GMAIL_TOKEN_FILE=/app/config/token.json
-
+      - STATE_FILE=/app/state/livetrack_state.json
     restart: unless-stopped
-
-    # Health check
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/current').read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-    # Resource limits
+    # Resource limits for background service
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 512M
+          cpus: '0.5'
+          memory: 256M
         reservations:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '0.1'
+          memory: 64M
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
+  # Web service (Flask app)
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: garmin-livetrack-public
+    ports:
+      - "5002:5000"
+    volumes:
+      # Shared state file (read-only)
+      - livetrack-state:/app/state:ro
+    environment:
+      - APP_TITLE=Garmin LiveTrack Public
+      - ACTIVITY_MAX_AGE_HOURS=1
+      - STATE_FILE=/app/state/livetrack_state.json
+    restart: unless-stopped
+    depends_on:
+      - monitor
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Resource limits for web service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
     # Logging
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  livetrack-state:
