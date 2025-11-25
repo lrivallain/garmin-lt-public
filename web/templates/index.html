@@ -283,19 +283,6 @@
             }
         }
 
-        // Establish Server-Sent Events connection
-        const eventSource = new EventSource('/api/stream');
-
-        eventSource.onmessage = function(event) {
-            const url = event.data.trim();
-            updateUI(url || null);
-        };
-
-        eventSource.onerror = function(error) {
-            console.error('EventSource error:', error);
-            // Attempt to reconnect automatically (EventSource does this by default)
-        };
-
         // Initial load - fetch current status
         fetch('/api/current')
             .then(response => response.json())
@@ -306,7 +293,7 @@
                 console.error('Error fetching initial status:', error);
             });
 
-        // Periodically refresh status to update stale activities
+        // Auto-refresh: Poll for updates
         setInterval(function() {
             fetch('/api/current')
                 .then(response => response.json())
@@ -316,12 +303,7 @@
                 .catch(error => {
                     console.error('Error refreshing status:', error);
                 });
-        }, 60000); // Check every minute for status changes
-
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', function() {
-            eventSource.close();
-        });
+        }, 30000); // Check every 30 seconds for activity changes
     </script>
 </body>
 </html>
