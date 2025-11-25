@@ -36,31 +36,23 @@ garmin-livetrack-public/
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────┐
-│  Monitor Service    │  Polls Gmail every 30s
-│  (Background)       │  Writes state to JSON
-└──────────┬──────────┘
-           │
-           ▼
-    ┌──────────────┐
-    │ State Volume │  Shared Docker volume
-    │  JSON file   │
-    └──────┬───────┘
-           │
-           ▼
-┌────────────────────┐
-│   Web Service      │  Reads JSON
-│  (Flask)           │  Serves HTML
-└────────────────────┘
+┌───────────────────┐
+│  Monitor Service  │ Polls Gmail every 30s
+│   (Background)    │ Writes state to JSON
+└────────┬──────────┘
+         │
+         ▼
+  ┌──────────────┐
+  │ State Volume │    Shared Docker volume
+  │  JSON file   │
+  └──────┬───────┘
+         │
+         ▼
+┌──────────────────┐
+│   Web Service    │  Reads JSON
+│     (Flask)      │  Serves HTML
+└──────────────────┘
 ```
-
-**Benefits:**
-- ✅ No blocking (web service has zero Gmail API calls)
-- ✅ No 502 errors (instant worker startup)
-- ✅ Independent scaling
-- ✅ Better reliability (services restart independently)
-
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for detailed documentation.
 
 ## 🚀 Quick Start
 
@@ -128,4 +120,4 @@ python main.py
 
 ## 📝 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE.txt) file for details.
