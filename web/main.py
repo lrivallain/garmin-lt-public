@@ -15,7 +15,8 @@ from flask import Flask, render_template, jsonify
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__,
+            static_folder='static', static_url_path='/static')
 
 # State file path (shared with monitor service)
 STATE_FILE = Path(os.getenv('STATE_FILE', '/tmp/livetrack_state.json'))

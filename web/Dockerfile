@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -e .
 # Copy application files
 COPY main.py healthcheck.py ./
 COPY templates/ ./templates/
+COPY static/ ./static/
 
 # Create directory for state file with proper permissions
 RUN mkdir -p /app/state && \
