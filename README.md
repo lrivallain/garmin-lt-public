@@ -87,12 +87,12 @@ docker-compose up -d
 docker-compose logs -f
 
 # Check health
-curl http://localhost:5002/api/health
+curl http://localhost:5000/api/health
 ```
 
 ### 4. Access
 
-Open `http://localhost:5002` in your browser.
+Open `http://localhost:5000` in your browser.
 
 
 ## 🔧 Configuration
@@ -105,6 +105,7 @@ All configuration is done via environment variables in `docker-compose.yml` file
 | `EMAIL_CHECK_INTERVAL` | Monitor | 30 | Seconds between checks |
 | `APP_TITLE` | Web | Garmin LiveTrack Public | Page title |
 | `ACTIVITY_MAX_AGE_HOURS` | Web | 24 | Hours before "stale" |
+| `DEAD_ACTIVITY_MAX_AGE_HOURS` | Web | 48 | Hours before "no recent activity" |
 
 ## 🛠️ Development
 

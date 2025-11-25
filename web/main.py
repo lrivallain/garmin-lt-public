@@ -63,17 +63,30 @@ def calculate_activity_status(state):
     url = state.get('url')
     timestamp_str = state.get('timestamp')
     max_age_hours = int(os.getenv('ACTIVITY_MAX_AGE_HOURS', '24'))
+    dead_age_hours = int(os.getenv('DEAD_ACTIVITY_MAX_AGE_HOURS', '48'))
 
     # Parse timestamp if available
     timestamp = None
     age_hours = None
     is_stale = False
+    is_dead = False
 
     if timestamp_str:
         try:
             timestamp = datetime.fromisoformat(timestamp_str)
             now = datetime.now(timezone.utc)
             age_hours = (now - timestamp).total_seconds() / 3600
+            # Check against dead age threshold: if exceeded, return waiting status
+            if age_hours > dead_age_hours:
+                print("Activity age exceeds dead age threshold: returning waiting status.")
+                return {
+                    'url': None,
+                    'timestamp': None,
+                    'is_stale': False,
+                    'age_hours': None,
+                    'status': 'waiting'
+                }
+            # Check if activity is stale: beyond max age but within dead age
             is_stale = age_hours > max_age_hours
         except Exception as e:
             print(f"Error parsing timestamp: {e}")
@@ -82,6 +95,7 @@ def calculate_activity_status(state):
     if url and not is_stale:
         status = 'active'
     elif url and is_stale:
+        print("Activity is stale: returning last_activity status.")
         status = 'last_activity'
     else:
         status = 'waiting'
