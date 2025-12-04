@@ -151,44 +151,52 @@ def main():
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     # Initialize with empty state
-    save_state()
+    save_state(error="Waiting for authentication")
 
-    try:
-        print("Initializing Gmail client...", flush=True)
-        gmail_client = GmailClient(
-            credentials_file=credentials_file,
-            token_file=token_file,
-            expected_email=expected_email
-        )
-        print("✓ Gmail client initialized", flush=True)
-        print("-" * 60, flush=True)
+    # Main service loop - keep retrying on errors
+    while running:
+        gmail_client = None
 
-        # Run monitoring loop
-        monitor_loop(gmail_client, check_interval)
+        try:
+            # Wait for token to exist
+            if not TOKEN_FILE.exists():
+                print("⚠ No token found - waiting for authentication via /admin panel...", flush=True)
+                while running and not TOKEN_FILE.exists():
+                    time.sleep(5)
 
-    except FileNotFoundError as e:
-        print(f"\n⚠ {e}", file=sys.stderr, flush=True)
-        print("\nWaiting for authentication...", flush=True)
-        print("Please go to http://localhost:5000 and authenticate with Google", flush=True)
-        print("-" * 60, flush=True)
+                if not running:
+                    break
 
-        # Wait for token to be created
-        while running and not TOKEN_FILE.exists():
-            time.sleep(5)
-            print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Waiting for token.json...", flush=True)
+                print("✓ Token detected!", flush=True)
 
-        if TOKEN_FILE.exists():
-            print("✓ Token detected, retrying initialization...", flush=True)
-            main()
-        else:
-            print("Service shutdown before token was created", flush=True)
+            # Initialize Gmail client
+            print("Initializing Gmail client...", flush=True)
+            gmail_client = GmailClient(
+                credentials_file=credentials_file,
+                token_file=token_file,
+                expected_email=expected_email
+            )
+            print("✓ Gmail client initialized", flush=True)
+            print("-" * 60, flush=True)
 
-    except KeyboardInterrupt:
-        print("\nShutdown requested", flush=True)
-    except Exception as e:
-        print(f"\n✗ Fatal error: {e}", file=sys.stderr, flush=True)
-        save_state(error=str(e))
-        sys.exit(1)
+            # Run monitoring loop (blocks until error or shutdown)
+            monitor_loop(gmail_client, check_interval)
+
+            # If we get here, running was set to False (clean shutdown)
+            break
+
+        except FileNotFoundError:
+            # Token was deleted (e.g., logout) - wait for re-authentication
+            print("⚠ Token removed - waiting for re-authentication via /admin panel...", flush=True)
+            save_state(error="Waiting for authentication")
+            time.sleep(5)  # Brief pause before retry
+
+        except Exception as e:
+            print(f"⚠ Error: {e}", flush=True)
+            save_state(error="Service error - check logs")
+            if running:
+                print("⟳ Retrying in 10 seconds...", flush=True)
+                time.sleep(10)
 
     print("Service stopped", flush=True)
 

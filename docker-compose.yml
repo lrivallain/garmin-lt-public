@@ -54,11 +54,12 @@ services:
       - APP_TITLE=Garmin LiveTrack Public
       - ACTIVITY_MAX_AGE_HOURS=1
       - STATE_FILE=/app/state/livetrack_state.json
+      - GMAIL_ACCOUNT=your-livetrack@gmail.com
       - GMAIL_CREDENTIALS_FILE=/app/config/credentials.json
       - GMAIL_TOKEN_FILE=/app/config/token.json
       - FLASK_SECRET_KEY=change-me-in-production
-      # For production with HTTPS reverse proxy, remove OAUTHLIB_INSECURE_TRANSPORT
-      # For development HTTP, set to 1
+      # For production with HTTPS reverse proxy, set OAUTH_REDIRECT_URI and remove OAUTHLIB_INSECURE_TRANSPORT
+      # For development HTTP, set OAUTHLIB_INSECURE_TRANSPORT=1
       - OAUTHLIB_INSECURE_TRANSPORT=0
     restart: unless-stopped
     depends_on:

@@ -48,44 +48,27 @@ class GmailClient:
                 creds = Credentials.from_authorized_user_file(self.token_file, SCOPES)
                 print(f"✓ Token loaded from {self.token_file}", flush=True)
             except Exception as e:
-                print(f"Warning: Could not load token file: {e}", flush=True)
+                print(f"⚠ Could not load token file: {e}", flush=True)
                 creds = None
 
         # If no valid credentials, try to refresh
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 try:
-                    print("Refreshing expired token...", flush=True)
+                    print("⟳ Refreshing expired token...", flush=True)
                     creds.refresh(Request())
                     print("✓ Token refreshed successfully", flush=True)
                 except RefreshError as e:
-                    print(f"✗ Token refresh failed: {e}", flush=True)
-                    print("Token has expired or been revoked", flush=True)
-                    print()
-                    print("To fix this:", flush=True)
-                    print("1. Call the reauthentication endpoint:", flush=True)
-                    print("   curl -X POST http://localhost:5000/api/reauth", flush=True)
-                    print("2. Or run setup_auth.py locally and update token.json", flush=True)
-                    print()
-                    raise Exception(
-                        "Token expired or revoked. Use /api/reauth endpoint or run setup_auth.py"
-                    )
+                    print(f"⚠ Token refresh failed: {e}", flush=True)
+                    print("⚠ Token has expired or been revoked - waiting for re-authentication via /admin", flush=True)
+                    raise Exception("Token expired - re-authentication required via /admin")
                 except Exception as e:
-                    print(f"✗ Unexpected error during refresh: {e}", flush=True)
+                    print(f"⚠ Unexpected error during refresh: {e}", flush=True)
                     raise
             else:
-                print(f"✗ No valid token found at {self.token_file}", flush=True)
-                print()
-                print("Token setup required. To fix this:", flush=True)
-                print("1. Run setup_auth.py on your local machine:", flush=True)
-                print("   python3 setup_auth.py", flush=True)
-                print("2. Commit token.json to version control", flush=True)
-                print("3. Restart the container", flush=True)
-                print()
-                raise FileNotFoundError(
-                    f"OAuth2 token not found at {self.token_file}. "
-                    "Run setup_auth.py locally to authenticate, then restart."
-                )
+                # No valid token - this is expected on first run or after logout
+                print(f"⚠ No valid token found - waiting for authentication via /admin", flush=True)
+                raise FileNotFoundError("Token not found - authenticate via /admin panel")
 
         # Save updated token if it was refreshed
         if creds and creds.valid:
@@ -94,7 +77,7 @@ class GmailClient:
                     token.write(creds.to_json())
                 print(f"✓ Token saved to {self.token_file}", flush=True)
             except Exception as e:
-                print(f"Warning: Could not save token file: {e}", flush=True)
+                print(f"⚠ Could not save token file: {e}", flush=True)
 
         self.creds = creds
         self.service = build('gmail', 'v1', credentials=creds)

@@ -4,12 +4,10 @@ A self-hosted web application that provides a permanent, public view of your Gar
 
 ## ✨ Key Features
 
+- **Public Access**: Anyone can view your live activity - no authentication required
 - **Single Permanent URL**: One link that always shows your latest activity
-- **No Blocking**: Web service responds instantly (<10ms)
-- **Microservices Architecture**: Independent monitor and web services
 - **Real-time Updates**: Automatic frontend refresh when activity detected
 - **Responsive Design**: Works on all devices
-- **Easy Deployment**: Docker Compose setup with health checks
 
 ## 📁 Project Structure
 
@@ -23,36 +21,15 @@ garmin-livetrack-public/
 ├── web/                    # Web frontend service
 │   ├── main.py             # Flask application
 │   ├── healthcheck.py      # Health check script
-│   ├── templates/          # HTML templates
+│   ├── templates/
+│   │   ├── index.html      # Public LiveTrack view
+│   │   └── admin.html      # Admin authentication panel
 │   ├── Dockerfile
 │   └── README.md
-├── docker-compose.yml      # Service orchestration
-├── .env                    # Configuration
-├── credentials.json        # Gmail OAuth (not in repo)
-├── token.json              # Gmail token (not in repo)
+├── docker-compose.yml      # Production configuration
 └── README.md               # This file
 ```
 
-## 🏗️ Architecture
-
-```
-┌───────────────────┐
-│  Monitor Service  │ Polls Gmail every 30s
-│   (Background)    │ Writes state to JSON
-└────────┬──────────┘
-         │
-         ▼
-  ┌──────────────┐
-  │ State Volume │    Shared Docker volume
-  │  JSON file   │
-  └──────┬───────┘
-         │
-         ▼
-┌──────────────────┐
-│   Web Service    │  Reads JSON
-│     (Flask)      │  Serves HTML
-└──────────────────┘
-```
 
 ## 🚀 Quick Start
 
@@ -61,63 +38,75 @@ garmin-livetrack-public/
 - Docker and Docker Compose
 - Gmail account for LiveTrack notifications
 - Google Cloud Project with Gmail API enabled
-- `credentials.json` from Google Cloud Console
 
-### 2. Configure
+### 2. Create OAuth Credentials
 
-Edit docker-compose environment variables:
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select existing)
+3. Enable **Gmail API**: APIs & Services → Library → "Gmail API" → Enable
+4. Create OAuth Client ID:
+   - APIs & Services → Credentials → Create Credentials → OAuth Client ID
+   - Application Type: **Web application**
+   - Add Authorized redirect URIs:
+     - Development: `http://localhost:5000/auth/callback`
+     - Production: `https://your-domain.com/auth/callback`
+   - Download JSON → save as `credentials.json` in project root
 
-```bash
-# Gmail Configuration
-GMAIL_ACCOUNT=your-livetrack@gmail.com
-EMAIL_CHECK_INTERVAL=30
+### 3. Configure Environment
 
-# Web Configuration
-APP_TITLE=My LiveTrack
-ACTIVITY_MAX_AGE_HOURS=24
+Edit `docker-compose.yml` for production):
+
+```yaml
+environment:
+  - GMAIL_ACCOUNT=your-livetrack@gmail.com  # Your Gmail account
+  - OAUTH_REDIRECT_URI=http://localhost:5000/auth/callback
+  - FLASK_SECRET_KEY=change-me-to-random-value
 ```
 
-### 3. Deploy
+### 4. Start Services
 
 ```bash
-# Build and start services
+# Development
+docker-compose -f docker-compose-dev.yml up -d
+
+# Production
 docker-compose up -d
 
 # View logs
-docker-compose logs -f
-
-# Check health
-curl http://localhost:5000/api/health
+docker-compose logs -f web
+docker-compose logs -f monitor
 ```
 
-### 4. Access
+### 5. Admin Authentication
 
-Open `http://localhost:5000` in your browser.
+1. Visit the **admin page**: `http://localhost:5000/admin`
+2. Enter your Gmail account email (from `GMAIL_ACCOUNT`)
+3. Click "Authenticate"
+4. Complete Google OAuth flow
+5. Done! Monitor service starts automatically
 
+### 6. Share Your Public URL
+
+Share URI with anyone!
+
+- No authentication required to view
+- Shows your latest LiveTrack activity
+- Auto-updates when new activity detected
 
 ## 🔧 Configuration
 
-All configuration is done via environment variables in `docker-compose.yml` file:
+Configure via environment variables in `docker-compose.yml`:
 
 | Variable | Service | Default | Description |
 |----------|---------|---------|-------------|
-| `GMAIL_ACCOUNT` | Monitor | - | Gmail account email |
-| `EMAIL_CHECK_INTERVAL` | Monitor | 30 | Seconds between checks |
+| `GMAIL_ACCOUNT` | Both | - | Gmail account email (required for admin access) |
+| `EMAIL_CHECK_INTERVAL` | Monitor | 30 | Seconds between Gmail checks |
 | `APP_TITLE` | Web | Garmin LiveTrack Public | Page title |
-| `ACTIVITY_MAX_AGE_HOURS` | Web | 24 | Hours before "stale" |
-| `DEAD_ACTIVITY_MAX_AGE_HOURS` | Web | 48 | Hours before "no recent activity" |
-
-## 🛠️ Development
-
-```bash
-# Monitor service (standalone)
-cd monitor
-python monitor_service.py
-
-# Web service (standalone)
-cd web
-python main.py
-```
+| `ACTIVITY_MAX_AGE_HOURS` | Web | 12 | Hours before activity marked "stale" |
+| `DEAD_ACTIVITY_MAX_AGE_HOURS` | Web | 24 | Hours before hiding old activity |
+| `OAUTH_REDIRECT_URI` | Web | - | OAuth callback URL (set for production) |
+| `FLASK_SECRET_KEY` | Web | dev-secret | Session secret (change in production!) |
+| `OAUTHLIB_INSECURE_TRANSPORT` | Web | 0 | Set to 1 for HTTP (dev only) |
 
 ## 📝 License
 
