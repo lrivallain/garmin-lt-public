@@ -21,6 +21,9 @@ load_dotenv()
 # State file path
 STATE_FILE = Path(os.getenv('STATE_FILE', '/tmp/livetrack_state.json'))
 
+# Token file path
+TOKEN_FILE = Path(os.getenv('GMAIL_TOKEN_FILE', '/app/config/token.json'))
+
 # Global flag for graceful shutdown
 running = True
 
@@ -162,6 +165,23 @@ def main():
 
         # Run monitoring loop
         monitor_loop(gmail_client, check_interval)
+
+    except FileNotFoundError as e:
+        print(f"\n⚠ {e}", file=sys.stderr, flush=True)
+        print("\nWaiting for authentication...", flush=True)
+        print("Please go to http://localhost:5000 and authenticate with Google", flush=True)
+        print("-" * 60, flush=True)
+
+        # Wait for token to be created
+        while running and not TOKEN_FILE.exists():
+            time.sleep(5)
+            print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Waiting for token.json...", flush=True)
+
+        if TOKEN_FILE.exists():
+            print("✓ Token detected, retrying initialization...", flush=True)
+            main()
+        else:
+            print("Service shutdown before token was created", flush=True)
 
     except KeyboardInterrupt:
         print("\nShutdown requested", flush=True)

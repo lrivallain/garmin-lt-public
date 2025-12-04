@@ -8,8 +8,8 @@ services:
     volumes:
       # Mount credentials (read-only for security)
       - ./credentials.json:/app/config/credentials.json:ro
-      # Mount token (read-write, app needs to update it)
-      - ./token.json:/app/config/token.json:rw
+      # Mount token (read-write, shared with web service)
+      - livetrack-config:/app/config
       # Shared state file
       - livetrack-state:/app/state
     environment:
@@ -44,12 +44,22 @@ services:
     ports:
       - "5002:5000"
     volumes:
+      # Mount credentials (read-only for security)
+      - ./credentials.json:/app/config/credentials.json:ro
       # Shared state file (read-only)
       - livetrack-state:/app/state:ro
+      # Shared config (for token file)
+      - livetrack-config:/app/config
     environment:
       - APP_TITLE=Garmin LiveTrack Public
       - ACTIVITY_MAX_AGE_HOURS=1
       - STATE_FILE=/app/state/livetrack_state.json
+      - GMAIL_CREDENTIALS_FILE=/app/config/credentials.json
+      - GMAIL_TOKEN_FILE=/app/config/token.json
+      - FLASK_SECRET_KEY=change-me-in-production
+      # For production with HTTPS reverse proxy, remove OAUTHLIB_INSECURE_TRANSPORT
+      # For development HTTP, set to 1
+      - OAUTHLIB_INSECURE_TRANSPORT=0
     restart: unless-stopped
     depends_on:
       - monitor
@@ -78,3 +88,4 @@ services:
 
 volumes:
   livetrack-state:
+  livetrack-config:

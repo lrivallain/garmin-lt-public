@@ -7,10 +7,16 @@ happens in this process - it's purely for serving the web interface.
 
 import os
 import json
+import signal
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, redirect, request, session, url_for
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from google.auth.exceptions import RefreshError
 
 # Load environment variables
 load_dotenv()
@@ -18,8 +24,20 @@ load_dotenv()
 app = Flask(__name__,
             static_folder='static', static_url_path='/static')
 
+# Session secret for OAuth state management
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+
 # State file path (shared with monitor service)
 STATE_FILE = Path(os.getenv('STATE_FILE', '/tmp/livetrack_state.json'))
+
+# Token file path (where OAuth token is stored)
+TOKEN_FILE = Path(os.getenv('GMAIL_TOKEN_FILE', '/app/config/token.json'))
+
+# Gmail API scopes
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+
+# Google OAuth2 client ID file
+CREDENTIALS_FILE = os.getenv('GMAIL_CREDENTIALS_FILE', 'credentials.json')
 
 
 def read_state():
@@ -112,8 +130,153 @@ def calculate_activity_status(state):
 @app.route('/')
 def index():
     """Serve the main page with LiveTrack iframe."""
+    # Check if token exists
+    if not TOKEN_FILE.exists():
+        return redirect(url_for('login'))
+
     app_title = os.getenv('APP_TITLE', 'Garmin LiveTrack Public')
     return render_template('index.html', app_title=app_title)
+
+
+@app.route('/login')
+def login():
+    """Render login page and optionally start OAuth2 flow."""
+    # If already authenticated, redirect to home
+    if TOKEN_FILE.exists():
+        return redirect(url_for('index'))
+
+    # Show login page
+    error = request.args.get('error')
+    return render_template('login.html', error=error)
+
+
+@app.route('/auth/start')
+def start_oauth():
+    """Start OAuth2 flow."""
+    if not os.path.exists(CREDENTIALS_FILE):
+        error_msg = f'credentials.json not found at {CREDENTIALS_FILE}'
+        print(f"✗ {error_msg}", flush=True)
+        return redirect(url_for('login', error=error_msg))
+
+    try:
+        # Validate credentials file is valid JSON and has correct format
+        with open(CREDENTIALS_FILE, 'r') as f:
+            creds_content = f.read()
+            if not creds_content.strip():
+                raise ValueError('credentials.json is empty')
+
+            creds_data = json.loads(creds_content)
+
+            # Check for service account (wrong type)
+            if creds_data.get('type') == 'service_account':
+                raise ValueError(
+                    'Wrong credential type: You have a Service Account credential. '
+                    'This app requires a Desktop Application credential. '
+                    'Please create a new OAuth Client ID with type "Desktop application" '
+                    'in Google Cloud Console (APIs & Services > Credentials).'
+                )
+
+            # Check for installed apps (correct type)
+            if 'installed' not in creds_data:
+                raise ValueError(
+                    'credentials.json does not contain "installed" key. '
+                    'This must be a Desktop Application credential, not Web or Service Account. '
+                    'Go to Google Cloud Console > APIs & Services > Credentials, '
+                    'click "Create Credentials" > "OAuth Client ID" > "Desktop application".'
+                )
+
+        flow = Flow.from_client_secrets_file(
+            CREDENTIALS_FILE,
+            scopes=SCOPES,
+            redirect_uri=url_for('auth_callback', _external=True)
+        )
+
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true'
+        )
+
+        session['oauth_state'] = state
+        print(f"✓ OAuth flow started, redirecting to Google", flush=True)
+        return redirect(authorization_url)
+
+    except json.JSONDecodeError as e:
+        error_msg = f'credentials.json is not valid JSON: {str(e)}'
+        print(f"✗ {error_msg}", flush=True)
+        return redirect(url_for('login', error=error_msg))
+    except ValueError as e:
+        error_msg = str(e)
+        print(f"✗ {error_msg}", flush=True)
+        return redirect(url_for('login', error=error_msg))
+    except Exception as e:
+        error_msg = f'Authentication error: {str(e)}'
+        print(f"✗ Error starting OAuth flow: {e}", flush=True)
+        return redirect(url_for('login', error=error_msg))
+
+
+@app.route('/auth/callback')
+def auth_callback():
+    """Handle OAuth2 callback from Google."""
+    try:
+        # Verify state parameter
+        if request.args.get('state') != session.get('oauth_state'):
+            return jsonify({'error': 'State mismatch'}), 400
+
+        # Exchange code for credentials
+        flow = Flow.from_client_secrets_file(
+            CREDENTIALS_FILE,
+            scopes=SCOPES,
+            redirect_uri=url_for('auth_callback', _external=True)
+        )
+
+        flow.fetch_token(authorization_response=request.url)
+        creds = flow.credentials
+
+        # Ensure token directory exists
+        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save token
+        with open(TOKEN_FILE, 'w') as f:
+            f.write(creds.to_json())
+
+        print(f"✓ OAuth token saved to {TOKEN_FILE}", flush=True)
+
+        # Notify monitor service to reload
+        try:
+            subprocess.run(
+                ['pkill', '-HUP', '-f', 'monitor_service'],
+                check=False,
+                capture_output=True
+            )
+            print("✓ Sent HUP signal to monitor service", flush=True)
+        except Exception as e:
+            print(f"Warning: Could not signal monitor service: {e}", flush=True)
+
+        # Redirect to home page
+        return redirect(url_for('index'))
+
+    except Exception as e:
+        print(f"✗ OAuth callback error: {e}", flush=True)
+        return jsonify({
+            'error': 'Authentication failed',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/logout')
+def logout():
+    """Logout and delete token."""
+    try:
+        if TOKEN_FILE.exists():
+            TOKEN_FILE.unlink()
+            print(f"✓ Token deleted", flush=True)
+
+        session.clear()
+        return redirect(url_for('login'))
+
+    except Exception as e:
+        print(f"✗ Error during logout: {e}", flush=True)
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/current')
@@ -151,6 +314,47 @@ def health():
         'state_file_exists': STATE_FILE.exists(),
         'has_activity': state.get('url') is not None
     })
+
+
+@app.route('/api/reauth', methods=['POST'])
+def reauth():
+    """Trigger reauthentication by deleting token and redirecting to login.
+
+    This endpoint deletes the token file and signals the monitor service
+    to force re-authentication on next check.
+
+    Returns:
+        JSON response with redirect URL
+    """
+    try:
+        # Delete token file to force re-authentication
+        if TOKEN_FILE.exists():
+            TOKEN_FILE.unlink()
+            print(f"✓ Deleted token file: {TOKEN_FILE}", flush=True)
+
+        # Send SIGHUP to monitor service
+        try:
+            subprocess.run(
+                ['pkill', '-HUP', '-f', 'monitor_service'],
+                check=False,
+                capture_output=True
+            )
+            print("✓ Sent HUP signal to monitor service", flush=True)
+        except Exception as e:
+            print(f"Warning: Could not send signal to monitor: {e}", flush=True)
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Reauthentication triggered. Redirecting to login...',
+            'redirect_url': url_for('login')
+        }), 200
+
+    except Exception as e:
+        print(f"✗ Error triggering reauthentication: {e}", flush=True)
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 
 def main():

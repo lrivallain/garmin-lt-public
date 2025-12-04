@@ -16,8 +16,8 @@ COPY main.py healthcheck.py ./
 COPY templates/ ./templates/
 COPY static/ ./static/
 
-# Create directory for state file with proper permissions
-RUN mkdir -p /app/state && \
+# Create directory for state and config files with proper permissions
+RUN mkdir -p /app/state /app/config && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user

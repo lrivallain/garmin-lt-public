@@ -10,7 +10,9 @@ from bs4 import BeautifulSoup
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 # Gmail API scopes
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
@@ -21,7 +23,7 @@ class GmailClient:
 
     def __init__(self, credentials_file: str = 'credentials.json', token_file: str = 'token.json',
                  expected_email: Optional[str] = None):
-        """Initialize Gmail client.
+        """Initialize Gmail client with OAuth2 authentication.
 
         Args:
             credentials_file: Path to Google OAuth2 credentials JSON file
@@ -33,6 +35,7 @@ class GmailClient:
         self.expected_email = expected_email
         self.service = None
         self.authenticated_email = None
+        self.creds = None
         self._authenticate()
 
     def _authenticate(self):
@@ -41,27 +44,59 @@ class GmailClient:
 
         # Load existing token if available
         if os.path.exists(self.token_file):
-            creds = Credentials.from_authorized_user_file(self.token_file, SCOPES)
+            try:
+                creds = Credentials.from_authorized_user_file(self.token_file, SCOPES)
+                print(f"✓ Token loaded from {self.token_file}", flush=True)
+            except Exception as e:
+                print(f"Warning: Could not load token file: {e}", flush=True)
+                creds = None
 
-        # If no valid credentials, authenticate
+        # If no valid credentials, try to refresh
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists(self.credentials_file):
-                    raise FileNotFoundError(
-                        f"Credentials file '{self.credentials_file}' not found. "
-                        "Please download it from Google Cloud Console."
+                try:
+                    print("Refreshing expired token...", flush=True)
+                    creds.refresh(Request())
+                    print("✓ Token refreshed successfully", flush=True)
+                except RefreshError as e:
+                    print(f"✗ Token refresh failed: {e}", flush=True)
+                    print("Token has expired or been revoked", flush=True)
+                    print()
+                    print("To fix this:", flush=True)
+                    print("1. Call the reauthentication endpoint:", flush=True)
+                    print("   curl -X POST http://localhost:5000/api/reauth", flush=True)
+                    print("2. Or run setup_auth.py locally and update token.json", flush=True)
+                    print()
+                    raise Exception(
+                        "Token expired or revoked. Use /api/reauth endpoint or run setup_auth.py"
                     )
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.credentials_file, SCOPES
+                except Exception as e:
+                    print(f"✗ Unexpected error during refresh: {e}", flush=True)
+                    raise
+            else:
+                print(f"✗ No valid token found at {self.token_file}", flush=True)
+                print()
+                print("Token setup required. To fix this:", flush=True)
+                print("1. Run setup_auth.py on your local machine:", flush=True)
+                print("   python3 setup_auth.py", flush=True)
+                print("2. Commit token.json to version control", flush=True)
+                print("3. Restart the container", flush=True)
+                print()
+                raise FileNotFoundError(
+                    f"OAuth2 token not found at {self.token_file}. "
+                    "Run setup_auth.py locally to authenticate, then restart."
                 )
-                creds = flow.run_local_server(port=0)
 
-            # Save credentials for next run
-            with open(self.token_file, 'w') as token:
-                token.write(creds.to_json())
+        # Save updated token if it was refreshed
+        if creds and creds.valid:
+            try:
+                with open(self.token_file, 'w') as token:
+                    token.write(creds.to_json())
+                print(f"✓ Token saved to {self.token_file}", flush=True)
+            except Exception as e:
+                print(f"Warning: Could not save token file: {e}", flush=True)
 
+        self.creds = creds
         self.service = build('gmail', 'v1', credentials=creds)
 
         # Verify authenticated email if expected_email is provided
@@ -82,11 +117,11 @@ class GmailClient:
                     f"Please delete token.json and authenticate with the correct account."
                 )
 
-            print(f"✓ Authenticated as: {self.authenticated_email}")
+            print(f"✓ Authenticated as: {self.authenticated_email}", flush=True)
         except Exception as e:
             if "Gmail account mismatch" in str(e):
                 raise
-            print(f"Warning: Could not verify Gmail account: {e}")
+            print(f"Warning: Could not verify Gmail account: {e}", flush=True)
 
     def get_latest_livetrack_email(self) -> Optional[dict]:
         """Fetch the most recent Garmin LiveTrack email.
@@ -97,7 +132,7 @@ class GmailClient:
         try:
             # Search for emails from Garmin LiveTrack
             query = 'from:noreply@garmin.com subject:LiveTrack'
-            print(f"Querying Gmail with: {query}")
+            print(f"Querying Gmail with: {query}", flush=True)
             results = self.service.users().messages().list(
                 userId='me',
                 q=query,
@@ -107,12 +142,12 @@ class GmailClient:
             messages = results.get('messages', [])
 
             if not messages:
-                print("No LiveTrack emails found")
+                print("No LiveTrack emails found", flush=True)
                 return None
 
             # Get the most recent message
             msg_id = messages[0]['id']
-            print(f"Fetching email ID: {msg_id}")
+            print(f"Fetching email ID: {msg_id}", flush=True)
             message = self.service.users().messages().get(
                 userId='me',
                 id=msg_id,
@@ -121,9 +156,15 @@ class GmailClient:
 
             return self._parse_message(message)
 
+        except HttpError as e:
+            if e.resp.status == 401:
+                print(f"✗ Unauthorized (401): Token is invalid or revoked", flush=True)
+            else:
+                print(f"✗ HTTP Error {e.resp.status}: {e}", flush=True)
+            raise
         except Exception as e:
-            print(f"Error fetching emails: {e}")
-            return None
+            print(f"✗ Error fetching emails: {e}", flush=True)
+            raise
 
     def _parse_message(self, message: dict) -> Optional[dict]:
         """Parse Gmail message to extract LiveTrack URL.
@@ -146,7 +187,7 @@ class GmailClient:
             try:
                 timestamp = parsedate_to_datetime(date_str)
             except Exception as e:
-                print(f"Warning: Could not parse email date '{date_str}': {e}")
+                print(f"Warning: Could not parse email date '{date_str}': {e}", flush=True)
 
         # Use internal date as fallback
         if not timestamp and 'internalDate' in message:
@@ -154,7 +195,7 @@ class GmailClient:
                 # internalDate is in milliseconds since epoch
                 timestamp = datetime.fromtimestamp(int(message['internalDate']) / 1000)
             except Exception as e:
-                print(f"Warning: Could not parse internal date: {e}")
+                print(f"Warning: Could not parse internal date: {e}", flush=True)
 
         # Extract email body
         body = self._get_message_body(message.get('payload', {}))
